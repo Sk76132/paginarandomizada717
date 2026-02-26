@@ -2,100 +2,137 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<title>Dice Arena - Modo Estándar Mejorado</title>
+<title>Dice Arena PRO Probabilidades</title>
 <style>
 body { background:#0f1220; color:white; font-family:Arial; text-align:center;}
 .container { width:90%; max-width:900px; margin:auto; }
-.top { margin:10px 0; }
 input { margin:5px; padding:4px; }
-button { margin:5px; padding:8px 16px; cursor:pointer; border:none; border-radius:6px; }
-button.gris { background:#888; color:white; }
-button.gris:hover { background:#aaa; }
-#tabla { background:#161a2e; border:1px solid #333; padding:10px; height:220px; overflow:auto; font-family:monospace; margin-top:10px; }
-#lider { font-size:1.2em; font-weight:bold; margin-top:10px; }
-canvas { margin-top:10px; background:#161a2e; border:1px solid #333; }
+button { margin:3px; padding:4px 8px; border:none; border-radius:4px; cursor:pointer;}
+button.gris { background:#888; color:white;}
+#tabla { background:#161a2e; border:1px solid #333; padding:10px; height:180px; overflow:auto; font-family:monospace; margin-top:10px;}
+canvas { margin-top:10px; background:#161a2e; border:1px solid #333;}
+.playerBox { margin:4px; }
 </style>
 </head>
 <body>
 <div class="container">
-<h2>Dice Arena - Modo Estándar Mejorado</h2>
+<h2>Dice Arena PRO - Probabilidades</h2>
 
-<div class="top">
 Jugadores <input id="players" type="number" value="2" min="2">
 Min <input id="min" type="number" value="1">
 Max <input id="max" type="number" value="6">
 Velocidad(ms) <input id="velocidad" type="number" value="500">
 Limite rondas <input id="limite" type="number" value="0">
-<button onclick="configurar()">Configurar Jugadores</button>
-<button onclick="resetCompleto()">Reset Completo</button>
-<button onclick="iniciarAuto()">Iniciar Rondas Auto</button>
-<button onclick="detenerAuto()">Detener Auto</button>
-</div>
+
+<button onclick="configurar()">Configurar</button>
+<button onclick="resetCompleto()">Reset</button>
+<button onclick="iniciarAuto()">Auto</button>
+<button onclick="detenerAuto()">Detener</button>
 
 <div id="nombres"></div>
 
-<!-- Botón gris que ejecuta toda la ronda y muestra resultados -->
-<button class="gris" onclick="ejecutarRondaCompleta()">Ejecutar Ronda Manual</button>
+<button class="gris" onclick="ejecutarRonda()">Ronda Manual</button>
 
-<h3 id="lider"></h3>
 <h3 id="info"></h3>
-<h3 id="prob" style="display:none;"></h3>
+<h3 id="lider"></h3>
 <p id="mensaje"></p>
 
 <canvas id="grafica" height="120"></canvas>
+<canvas id="dominio" width="400" height="50"></canvas>
+
 <div id="tabla"></div>
 
 </div>
 
 <script>
-let jugadores=[], puntos=[], colores=[], ultimoGanador=null, rondas=0;
-let mostrarProb=false, intervalo=null;
+let jugadores=[], puntos=[], colores=[], pesos=[], rondas=0;
+let intervalo=null;
 
 // --- CONECTOR PARA FUTURAS FUNCIONES ---
-// --- AQUI PUEDES PEGAR FUNCIONES NUEVAS ---
-console.log("CONECTOR AQUÍ → pegar nuevas funciones debajo de este comentario");
+console.log("CONECTOR AQUÍ → puedes agregar funciones debajo");
 
-// --- FUNCIONES AUXILIARES ---
+// ------------------ UTIL ------------------
 function rand(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
 function colorRandom(){ return "hsl(" + Math.floor(Math.random()*360) + ",70%,60%)"; }
 
-// --- CONFIGURACIÓN DE JUGADORES ---
+// Generador con peso (probabilidad inclinada)
+function dadoPonderado(min,max,peso){
+    let valor = rand(min,max);
+    // Si el peso es alto, chance extra de repetir si salió alto
+    if(Math.random() < (peso-1)*0.15){
+        valor = rand(max-1,max);
+    }
+    return valor;
+}
+
+// ------------------ CONFIG ------------------
 function configurar(){
     let n=parseInt(document.getElementById("players").value);
-    jugadores=[]; puntos=[]; colores=[]; rondas=0;
+    jugadores=[]; puntos=[]; colores=[]; pesos=[]; rondas=0;
+
     let cont=document.getElementById("nombres");
     cont.innerHTML="";
+
     for(let i=0;i<n;i++){
         jugadores.push("J"+(i+1));
         puntos.push(0);
         colores.push(colorRandom());
+        pesos.push(1); // probabilidad base
+
+        let div=document.createElement("div");
+        div.className="playerBox";
+
         let input=document.createElement("input");
         input.value=jugadores[i];
         input.oninput=(e)=>jugadores[i]=e.target.value;
-        cont.appendChild(input);
+
+        let mas=document.createElement("button");
+        mas.textContent="➕";
+        mas.onclick=()=>{ pesos[i]++; };
+
+        let menos=document.createElement("button");
+        menos.textContent="➖";
+        menos.onclick=()=>{ pesos[i]=Math.max(1, pesos[i]-1); };
+
+        let label=document.createElement("span");
+        label.id="peso"+i;
+        label.textContent=" Peso:1 ";
+
+        // Actualizar visual peso
+        setInterval(()=>{ label.textContent=" Peso:"+pesos[i]+" "; },200);
+
+        div.appendChild(input);
+        div.appendChild(mas);
+        div.appendChild(menos);
+        div.appendChild(label);
+        cont.appendChild(div);
     }
+
     document.getElementById("tabla").innerHTML="";
     actualizarInfo();
     dibujarGrafica();
+    dibujarDominio();
 }
 
-// --- EJECUTAR RONDA COMPLETA ---
-function ejecutarRondaCompleta(){
+// ------------------ RONDA ------------------
+function ejecutarRonda(){
     let min=parseInt(document.getElementById("min").value);
     let max=parseInt(document.getElementById("max").value);
     let limite=parseInt(document.getElementById("limite").value);
-    if(limite>0 && rondas>=limite){ detenerAuto(); finalizarPartida(); return; }
+    if(limite>0 && rondas>=limite){ detenerAuto(); finalizar(); return; }
 
     let valores=[], mayor=-Infinity;
+
     for(let i=0;i<jugadores.length;i++){
-        let v=rand(min,max);
+        let v=dadoPonderado(min,max,pesos[i]);
         valores.push(v);
         if(v>mayor) mayor=v;
     }
 
-    let ganadores=[];
-    valores.forEach((v,i)=>{ if(v===mayor){ puntos[i]++; ganadores.push(i); } });
-    ultimoGanador=ganadores[0];
+    valores.forEach((v,i)=>{
+        if(v===mayor) puntos[i]++;
+    });
+
     rondas++;
 
     let fila=document.createElement("div");
@@ -106,16 +143,18 @@ function ejecutarRondaCompleta(){
         if(v===mayor) span.style.fontWeight="bold";
         fila.appendChild(span);
     });
+
     document.getElementById("tabla").appendChild(fila);
     document.getElementById("tabla").scrollTop=99999;
 
     actualizarInfo();
     dibujarGrafica();
+    dibujarDominio();
 }
 
-// --- ACTUALIZAR INFORMACIÓN ---
+// ------------------ INFO ------------------
 function actualizarInfo(){
-    let texto="Rondas: "+rondas+" | ";
+    let texto="Rondas:"+rondas+" | ";
     let maxP=Math.max(...puntos);
     let lideres=[];
     puntos.forEach((p,i)=>{
@@ -126,20 +165,21 @@ function actualizarInfo(){
     document.getElementById("lider").innerText="Lider: "+lideres.join(", ");
 }
 
-// --- FINALIZAR ---
-function finalizarPartida(){
+function finalizar(){
     let maxP=Math.max(...puntos);
     let ganador=puntos.indexOf(maxP);
-    document.getElementById("mensaje").innerText=jugadores[ganador]+" ha ganado la partida";
+    document.getElementById("mensaje").innerText=jugadores[ganador]+" ganó la partida";
 }
 
-// --- GRAFICA ---
+// ------------------ GRAFICA BARRAS ------------------
 function dibujarGrafica(){
     const canvas=document.getElementById("grafica");
     const ctx=canvas.getContext("2d");
     ctx.clearRect(0,0,canvas.width,canvas.height);
+
     let maxP=Math.max(...puntos,1);
     let ancho=canvas.width/jugadores.length;
+
     puntos.forEach((p,i)=>{
         let alto=(p/maxP)*canvas.height;
         ctx.fillStyle=colores[i];
@@ -147,23 +187,42 @@ function dibujarGrafica(){
     });
 }
 
-// --- AUTO RONDAS ---
+// ------------------ GRAFICA DOMINIO ------------------
+function dibujarDominio(){
+    const canvas=document.getElementById("dominio");
+    const ctx=canvas.getContext("2d");
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    let total=puntos.reduce((a,b)=>a+b,0);
+    if(total===0) return;
+
+    let x=0;
+    puntos.forEach((p,i)=>{
+        let ancho=(p/total)*canvas.width;
+        ctx.fillStyle=colores[i];
+        ctx.fillRect(x,0,ancho,canvas.height);
+        x+=ancho;
+    });
+}
+
+// ------------------ AUTO ------------------
 function iniciarAuto(){
     if(intervalo) return;
     let vel=parseInt(document.getElementById("velocidad").value);
-    intervalo=setInterval(ejecutarRondaCompleta, vel);
+    intervalo=setInterval(ejecutarRonda,vel);
 }
+
 function detenerAuto(){
     clearInterval(intervalo);
     intervalo=null;
 }
 
-// --- RESET COMPLETO ---
 function resetCompleto(){
     detenerAuto();
     configurar();
 }
 
-// --- INICIALIZACIÓN ---
 configurar();
 </script>
+</body>
+</html>
