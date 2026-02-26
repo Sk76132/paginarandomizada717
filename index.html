@@ -2,21 +2,21 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<title>Dice Arena PRO Probabilidades</title>
+<title>Dice Arena - Conquista</title>
 <style>
 body { background:#0f1220; color:white; font-family:Arial; text-align:center;}
 .container { width:90%; max-width:900px; margin:auto; }
 input { margin:5px; padding:4px; }
 button { margin:3px; padding:4px 8px; border:none; border-radius:4px; cursor:pointer;}
 button.gris { background:#888; color:white;}
-#tabla { background:#161a2e; border:1px solid #333; padding:10px; height:180px; overflow:auto; font-family:monospace; margin-top:10px;}
+#tabla { background:#161a2e; border:1px solid #333; padding:10px; height:160px; overflow:auto; font-family:monospace; margin-top:10px;}
 canvas { margin-top:10px; background:#161a2e; border:1px solid #333;}
 .playerBox { margin:4px; }
 </style>
 </head>
 <body>
 <div class="container">
-<h2>Dice Arena PRO - Probabilidades</h2>
+<h2>Dice Arena - Modo Conquista</h2>
 
 Jugadores <input id="players" type="number" value="2" min="2">
 Min <input id="min" type="number" value="1">
@@ -37,35 +37,38 @@ Limite rondas <input id="limite" type="number" value="0">
 <h3 id="lider"></h3>
 <p id="mensaje"></p>
 
-<canvas id="grafica" height="120"></canvas>
-<canvas id="dominio" width="400" height="50"></canvas>
+<canvas id="territorio" width="400" height="200"></canvas>
 
 <div id="tabla"></div>
-
 </div>
 
 <script>
+// ---------------- VARIABLES ----------------
 let jugadores=[], puntos=[], colores=[], pesos=[], rondas=0;
 let intervalo=null;
 
-// --- CONECTOR PARA FUTURAS FUNCIONES ---
-console.log("CONECTOR AQUÍ → puedes agregar funciones debajo");
+// Territorio
+let grid=[];
+const GRID_W=20;
+const GRID_H=10;
 
-// ------------------ UTIL ------------------
+// --- CONECTOR PARA FUTURAS FUNCIONES ---
+console.log("CONECTOR → puedes agregar funciones aquí");
+
+// ---------------- UTIL ----------------
 function rand(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
 function colorRandom(){ return "hsl(" + Math.floor(Math.random()*360) + ",70%,60%)"; }
 
-// Generador con peso (probabilidad inclinada)
+// Dado con probabilidad modificada
 function dadoPonderado(min,max,peso){
-    let valor = rand(min,max);
-    // Si el peso es alto, chance extra de repetir si salió alto
+    let v=rand(min,max);
     if(Math.random() < (peso-1)*0.15){
-        valor = rand(max-1,max);
+        v=rand(max-1,max);
     }
-    return valor;
+    return v;
 }
 
-// ------------------ CONFIG ------------------
+// ---------------- CONFIG ----------------
 function configurar(){
     let n=parseInt(document.getElementById("players").value);
     jugadores=[]; puntos=[]; colores=[]; pesos=[]; rondas=0;
@@ -77,7 +80,7 @@ function configurar(){
         jugadores.push("J"+(i+1));
         puntos.push(0);
         colores.push(colorRandom());
-        pesos.push(1); // probabilidad base
+        pesos.push(1);
 
         let div=document.createElement("div");
         div.className="playerBox";
@@ -92,14 +95,13 @@ function configurar(){
 
         let menos=document.createElement("button");
         menos.textContent="➖";
-        menos.onclick=()=>{ pesos[i]=Math.max(1, pesos[i]-1); };
+        menos.onclick=()=>{ pesos[i]=Math.max(1,pesos[i]-1); };
 
         let label=document.createElement("span");
         label.id="peso"+i;
         label.textContent=" Peso:1 ";
 
-        // Actualizar visual peso
-        setInterval(()=>{ label.textContent=" Peso:"+pesos[i]+" "; },200);
+        setInterval(()=>{ label.textContent=" Peso:"+pesos[i]+" "; },300);
 
         div.appendChild(input);
         div.appendChild(mas);
@@ -109,29 +111,103 @@ function configurar(){
     }
 
     document.getElementById("tabla").innerHTML="";
+    inicializarTerritorio();
     actualizarInfo();
-    dibujarGrafica();
-    dibujarDominio();
+    dibujarTerritorio();
 }
 
-// ------------------ RONDA ------------------
+// ---------------- TERRITORIO ----------------
+function inicializarTerritorio(){
+    grid=[];
+    let total=GRID_W*GRID_H;
+
+    let pool=[];
+    for(let i=0;i<jugadores.length;i++){
+        for(let j=0;j<Math.floor(total/jugadores.length);j++){
+            pool.push(i);
+        }
+    }
+
+    while(pool.length<total){
+        pool.push(rand(0,jugadores.length-1));
+    }
+
+    pool.sort(()=>Math.random()-0.5);
+
+    let index=0;
+    for(let y=0;y<GRID_H;y++){
+        grid[y]=[];
+        for(let x=0;x<GRID_W;x++){
+            grid[y][x]=pool[index++];
+        }
+    }
+}
+
+function robarPixel(ganador){
+    let candidatos=[];
+    for(let y=0;y<GRID_H;y++){
+        for(let x=0;x<GRID_W;x++){
+            if(grid[y][x]!==ganador){
+                candidatos.push({x,y});
+            }
+        }
+    }
+
+    if(candidatos.length===0) return;
+
+    let c=candidatos[rand(0,candidatos.length-1)];
+    grid[c.y][c.x]=ganador;
+}
+
+function dibujarTerritorio(){
+    const canvas=document.getElementById("territorio");
+    const ctx=canvas.getContext("2d");
+
+    let cellW=canvas.width/GRID_W;
+    let cellH=canvas.height/GRID_H;
+
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    for(let y=0;y<GRID_H;y++){
+        for(let x=0;x<GRID_W;x++){
+            let j=grid[y][x];
+            ctx.fillStyle=colores[j];
+            ctx.fillRect(x*cellW,y*cellH,cellW,cellH);
+        }
+    }
+}
+
+// ---------------- RONDA ----------------
 function ejecutarRonda(){
     let min=parseInt(document.getElementById("min").value);
     let max=parseInt(document.getElementById("max").value);
     let limite=parseInt(document.getElementById("limite").value);
-    if(limite>0 && rondas>=limite){ detenerAuto(); finalizar(); return; }
+
+    if(limite>0 && rondas>=limite){
+        detenerAuto();
+        finalizar();
+        return;
+    }
 
     let valores=[], mayor=-Infinity;
-
     for(let i=0;i<jugadores.length;i++){
         let v=dadoPonderado(min,max,pesos[i]);
         valores.push(v);
         if(v>mayor) mayor=v;
     }
 
+    let ganadores=[];
     valores.forEach((v,i)=>{
-        if(v===mayor) puntos[i]++;
+        if(v===mayor){
+            puntos[i]++;
+            ganadores.push(i);
+        }
     });
+
+    // Solo roba territorio si hay un único ganador
+    if(ganadores.length===1){
+        robarPixel(ganadores[0]);
+    }
 
     rondas++;
 
@@ -148,19 +224,20 @@ function ejecutarRonda(){
     document.getElementById("tabla").scrollTop=99999;
 
     actualizarInfo();
-    dibujarGrafica();
-    dibujarDominio();
+    dibujarTerritorio();
 }
 
-// ------------------ INFO ------------------
+// ---------------- INFO ----------------
 function actualizarInfo(){
     let texto="Rondas:"+rondas+" | ";
     let maxP=Math.max(...puntos);
     let lideres=[];
+
     puntos.forEach((p,i)=>{
         texto+=jugadores[i]+":"+p+" ";
         if(p===maxP) lideres.push(jugadores[i]);
     });
+
     document.getElementById("info").innerText=texto;
     document.getElementById("lider").innerText="Lider: "+lideres.join(", ");
 }
@@ -171,41 +248,7 @@ function finalizar(){
     document.getElementById("mensaje").innerText=jugadores[ganador]+" ganó la partida";
 }
 
-// ------------------ GRAFICA BARRAS ------------------
-function dibujarGrafica(){
-    const canvas=document.getElementById("grafica");
-    const ctx=canvas.getContext("2d");
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-
-    let maxP=Math.max(...puntos,1);
-    let ancho=canvas.width/jugadores.length;
-
-    puntos.forEach((p,i)=>{
-        let alto=(p/maxP)*canvas.height;
-        ctx.fillStyle=colores[i];
-        ctx.fillRect(i*ancho,canvas.height-alto,ancho-4,alto);
-    });
-}
-
-// ------------------ GRAFICA DOMINIO ------------------
-function dibujarDominio(){
-    const canvas=document.getElementById("dominio");
-    const ctx=canvas.getContext("2d");
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-
-    let total=puntos.reduce((a,b)=>a+b,0);
-    if(total===0) return;
-
-    let x=0;
-    puntos.forEach((p,i)=>{
-        let ancho=(p/total)*canvas.width;
-        ctx.fillStyle=colores[i];
-        ctx.fillRect(x,0,ancho,canvas.height);
-        x+=ancho;
-    });
-}
-
-// ------------------ AUTO ------------------
+// ---------------- AUTO ----------------
 function iniciarAuto(){
     if(intervalo) return;
     let vel=parseInt(document.getElementById("velocidad").value);
@@ -222,6 +265,7 @@ function resetCompleto(){
     configurar();
 }
 
+// Inicializar
 configurar();
 </script>
 </body>
